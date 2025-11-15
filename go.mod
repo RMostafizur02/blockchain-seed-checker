@@ -8,5 +8,4 @@ require (
     github.com/fatih/color v1.16.0
     github.com/tyler-smith/go-bip39 v1.1.0
     golang.org/x/crypto v0.17.0
-    golang.org/x/text v0.14.0
 )
