@@ -1,3 +1,29 @@
+#!/bin/bash
+# fix-all-imports.sh
+
+# Clone the repository
+git clone https://github.com/RMostafizur02/blockchain-seed-checker.git
+cd blockchain-seed-checker
+
+# Create fixed files with correct import paths
+
+# 1. Fix go.mod
+cat > go.mod << 'EOF'
+module github.com/RMostafizur02/blockchain-seed-checker
+
+go 1.21
+
+require (
+    github.com/btcsuite/btcd/btcutil v1.1.5
+    github.com/ethereum/go-ethereum v1.13.5
+    github.com/fatih/color v1.16.0
+    github.com/tyler-smith/go-bip39 v1.1.0
+    golang.org/x/crypto v0.17.0
+)
+EOF
+
+# 2. Fix main.go with correct imports
+cat > cmd/seedchecker/main.go << 'EOF'
 package main
 
 import (
@@ -9,9 +35,9 @@ import (
 	"syscall"
 	"time"
 
-	"crypto-wallet-seed-checker/internal/generator"
-	"crypto-wallet-seed-checker/internal/scanner"
-	"crypto-wallet-seed-checker/pkg/config"
+	"github.com/RMostafizur02/blockchain-seed-checker/internal/generator"
+	"github.com/RMostafizur02/blockchain-seed-checker/internal/scanner"
+	"github.com/RMostafizur02/blockchain-seed-checker/pkg/config"
 )
 
 var (
@@ -28,7 +54,7 @@ var (
 func printBanner() {
 	banner := `
     ╔══════════════════════════════════════════════════════════════════════╗
-    ║                CRYPTO WALLET SEED CHECKER (Go) v1.0.0               ║
+    ║                BLOCKCHAIN SEED CHECKER (Go) v1.0.0                  ║
     ║                                                                    ║
     ║           🚨 EDUCATIONAL AND RESEARCH USE ONLY 🚨                 ║
     ║         Unauthorized access to wallets is ILLEGAL                 ║
@@ -185,3 +211,151 @@ func printResults(mnemonic string, results map[string]config.ScanResult) {
 	
 	fmt.Println("=" + string(make([]byte, 60)) + "=")
 }
+EOF
+
+# 3. Fix generator/bip39.go
+cat > internal/generator/bip39.go << 'EOF'
+package generator
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"strings"
+
+	"github.com/RMostafizur02/blockchain-seed-checker/pkg/config"
+	"github.com/tyler-smith/go-bip39"
+)
+
+// GenerateMnemonic generates a BIP-39 compliant mnemonic phrase
+func GenerateMnemonic(wordCount int) (string, error) {
+	// Map word count to entropy bits
+	entropyBits := map[int]int{
+		12: 128,
+		15: 160,
+		18: 192,
+		21: 224,
+		24: 256,
+	}
+
+	bits, ok := entropyBits[wordCount]
+	if !ok {
+		return "", fmt.Errorf("invalid word count: %d. Must be 12, 15, 18, 21, or 24", wordCount)
+	}
+
+	entropy := make([]byte, bits/8)
+	_, err := rand.Read(entropy)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate entropy: %v", err)
+	}
+
+	mnemonic, err := bip39.NewMnemonic(entropy)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate mnemonic: %v", err)
+	}
+
+	return mnemonic, nil
+}
+
+// ValidateMnemonic validates a BIP-39 mnemonic phrase
+func ValidateMnemonic(mnemonic string) bool {
+	return bip39.IsMnemonicValid(mnemonic)
+}
+
+// MnemonicToSeed converts a mnemonic to a seed using BIP-39 specification
+func MnemonicToSeed(mnemonic, passphrase string) ([]byte, error) {
+	if !ValidateMnemonic(mnemonic) {
+		return nil, fmt.Errorf("invalid mnemonic phrase")
+	}
+
+	seed := bip39.NewSeed(mnemonic, passphrase)
+	return seed, nil
+}
+
+// GenerateMnemonicCustom generates a mnemonic using custom wordlist (for educational purposes)
+func GenerateMnemonicCustom(wordCount int) (string, error) {
+	wordlist := config.GetWordlist()
+	
+	entropyBits := map[int]int{
+		12: 128,
+		15: 160,
+		18: 192,
+		21: 224,
+		24: 256,
+	}
+
+	bits, ok := entropyBits[wordCount]
+	if !ok {
+		return "", fmt.Errorf("invalid word count: %d", wordCount)
+	}
+
+	// Generate entropy
+	entropy := make([]byte, bits/8)
+	_, err := rand.Read(entropy)
+	if err != nil {
+		return "", err
+	}
+
+	// Calculate checksum
+	hash := sha256.Sum256(entropy)
+	checksumBits := bits / 32
+	checksumByte := hash[0] >> (8 - uint(checksumBits))
+
+	// Convert entropy to binary string
+	var entropyBitsStr string
+	for _, b := range entropy {
+		entropyBitsStr += fmt.Sprintf("%08b", b)
+	}
+
+	// Add checksum
+	entropyBitsStr += fmt.Sprintf("%0*b", checksumBits, checksumByte)
+
+	// Split into 11-bit chunks and map to words
+	var words []string
+	for i := 0; i < len(entropyBitsStr); i += 11 {
+		end := i + 11
+		if end > len(entropyBitsStr) {
+			end = len(entropyBitsStr)
+		}
+		
+		chunk := entropyBitsStr[i:end]
+		index := binaryFromString(chunk)
+		if index >= len(wordlist) {
+			return "", fmt.Errorf("word index out of range")
+		}
+		words = append(words, wordlist[index])
+	}
+
+	return strings.Join(words, " "), nil
+}
+
+func binaryFromString(s string) uint16 {
+	var result uint16
+	for _, ch := range s {
+		result = result<<1 | uint16(ch-'0')
+	}
+	return result
+}
+EOF
+
+# Update dependencies
+go mod tidy
+
+# Test the build
+echo "🔨 Testing build..."
+go build -o seedchecker cmd/seedchecker/main.go
+
+if [ $? -eq 0 ]; then
+    echo "✅ Build successful! All imports fixed."
+    echo "🚀 Committing changes..."
+    
+    git add .
+    git commit -m "Fix all import paths to match repository name"
+    git push origin main
+    
+    echo "✅ All files updated successfully!"
+    echo "📦 Now install with: go install github.com/RMostafizur02/blockchain-seed-checker/cmd/seedchecker@latest"
+else
+    echo "❌ Build failed. Please check the errors above."
+fi
