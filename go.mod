@@ -1,4 +1,4 @@
-module github.com/rikotskifzuri02/crypto-wallet-seed-checker
+module github.com/RMostafizur02/blockchain-seed-checker
 
 go 1.21
 
